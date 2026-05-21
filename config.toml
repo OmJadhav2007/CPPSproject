@@ -1,0 +1,158 @@
+import streamlit as st
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from frontend.components.styles import DARK_THEME_CSS
+from frontend.components.api_client import login, signup
+
+st.set_page_config(
+    page_title="Goal Sync",
+    page_icon="🎯",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown(DARK_THEME_CSS, unsafe_allow_html=True)
+
+# ── Auth Guard ──
+def show_auth():
+    # Center the auth form
+    _, center, _ = st.columns([1, 2, 1])
+    with center:
+        st.markdown("""
+        <div style="text-align:center;padding:2rem 0 1rem;">
+            <div style="font-family:'Syne',sans-serif;font-size:2.8rem;font-weight:800;
+                background:linear-gradient(135deg,#8b5cf6 0%,#06b6d4 100%);
+                -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+                Goal Sync
+            </div>
+            <div style="color:#475569;font-size:0.9rem;margin-top:0.25rem;">
+                Your personal productivity & habit tracking platform
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tab1, tab2 = st.tabs(["Sign In", "Create Account"])
+
+        with tab1:
+            with st.form("login_form"):
+                st.markdown('<div style="font-size:0.75rem;color:#64748b;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:0.75rem;">Welcome back</div>', unsafe_allow_html=True)
+                email = st.text_input("Email", placeholder="you@example.com")
+                password = st.text_input("Password", type="password", placeholder="••••••••")
+                submit = st.form_submit_button("Sign In →", use_container_width=True)
+                if submit:
+                    if not email or not password:
+                        st.error("Please fill in all fields")
+                    else:
+                        result = login(email, password)
+                        if result:
+                            st.session_state["token"] = result["access_token"]
+                            st.session_state["user"] = result["user"]
+                            st.session_state["authenticated"] = True
+                            st.rerun()
+                        else:
+                            st.error("❌ Invalid email or password")
+
+        with tab2:
+            with st.form("signup_form"):
+                st.markdown('<div style="font-size:0.75rem;color:#64748b;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:0.75rem;">Start your journey</div>', unsafe_allow_html=True)
+                new_username = st.text_input("Username", placeholder="yourname")
+                new_email = st.text_input("Email", placeholder="you@example.com", key="su_email")
+                new_password = st.text_input("Password", type="password", placeholder="Choose a strong password", key="su_pass")
+                new_password2 = st.text_input("Confirm Password", type="password", placeholder="Repeat password")
+                submit2 = st.form_submit_button("Create Account →", use_container_width=True)
+                if submit2:
+                    if not all([new_username, new_email, new_password, new_password2]):
+                        st.error("Please fill in all fields")
+                    elif new_password != new_password2:
+                        st.error("Passwords don't match")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        result = signup(new_email, new_username, new_password)
+                        if result:
+                            st.session_state["token"] = result["access_token"]
+                            st.session_state["user"] = result["user"]
+                            st.session_state["authenticated"] = True
+                            st.rerun()
+                        else:
+                            st.error("❌ Registration failed. Email or username may be taken.")
+
+        st.markdown("""
+        <div style="text-align:center;margin-top:2rem;color:#1e293b;font-size:0.78rem;">
+            ✦ Notion-inspired · Linear-grade · Built for serious achievers
+        </div>""", unsafe_allow_html=True)
+
+
+def show_app():
+    from frontend.pages import dashboard, goals, tracker, calendar, analytics, notes, settings
+
+    user = st.session_state.get("user", {})
+    username = user.get("username", "User")
+
+    with st.sidebar:
+        st.markdown(f'<div class="nav-logo">🎯 Goal Sync</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="nav-user">Signed in as <strong>{username}</strong></div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.12em;color:#334155;text-transform:uppercase;padding:0.25rem 0 0.5rem;">MAIN</div>', unsafe_allow_html=True)
+
+        nav_items = [
+            ("🏠", "Dashboard"),
+            ("🎯", "Goals"),
+            ("📋", "Weekly Tracker"),
+            ("📅", "Calendar"),
+            ("📊", "Analytics"),
+            ("📝", "Notes"),
+            ("⚙️", "Settings"),
+        ]
+
+        if "page" not in st.session_state:
+            st.session_state["page"] = "Dashboard"
+
+        for icon, name in nav_items:
+            is_active = st.session_state["page"] == name
+            bg = "rgba(139,92,246,0.15)" if is_active else "transparent"
+            border_l = "3px solid #8b5cf6" if is_active else "3px solid transparent"
+            text_color = "#c4b5fd" if is_active else "#94a3b8"
+
+            if st.sidebar.button(
+                f"{icon}  {name}",
+                key=f"nav_{name}",
+                use_container_width=True
+            ):
+                st.session_state["page"] = name
+                st.rerun()
+
+        st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
+        st.sidebar.markdown("""
+        <div style="font-size:0.7rem;color:#1e293b;text-align:center;padding:0.5rem;">
+            Goal Sync v1.0 · Stay consistent ✦
+        </div>""", unsafe_allow_html=True)
+
+    # ── Page Router ──
+    page = st.session_state.get("page", "Dashboard")
+
+    if page == "Dashboard":
+        dashboard.render()
+    elif page == "Goals":
+        goals.render()
+    elif page == "Weekly Tracker":
+        tracker.render()
+    elif page == "Calendar":
+        calendar.render()
+    elif page == "Analytics":
+        analytics.render()
+    elif page == "Notes":
+        notes.render()
+    elif page == "Settings":
+        settings.render()
+
+
+# ── Main Entry ──
+if st.session_state.get("authenticated"):
+    show_app()
+else:
+    show_auth()

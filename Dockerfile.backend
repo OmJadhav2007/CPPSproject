@@ -1,0 +1,122 @@
+import streamlit as st
+from datetime import datetime
+from frontend.components.api_client import api_get, api_post, api_put, api_delete
+
+def render():
+    st.markdown('<div class="page-title">Notes & Reflections</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-subtitle">Capture your thoughts, wins, and lessons learned.</div>', unsafe_allow_html=True)
+
+    notes = api_get("/api/notes/") or []
+
+    col_list, col_editor = st.columns([2, 3])
+
+    with col_list:
+        st.markdown(f'<div class="metric-label" style="margin-bottom:0.75rem;">ALL NOTES ({len(notes)})</div>', unsafe_allow_html=True)
+
+        if st.button("+ New Note", use_container_width=True):
+            st.session_state["active_note"] = None
+            st.session_state["note_mode"] = "new"
+            st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if not notes:
+            st.markdown("""
+            <div style="background:rgba(139,92,246,0.06);border:1px dashed rgba(139,92,246,0.2);
+                border-radius:12px;padding:2rem;text-align:center;">
+                <div style="font-size:2rem;">📝</div>
+                <div style="color:#64748b;font-size:0.85rem;margin-top:0.5rem;">No notes yet. Start writing!</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            for note in notes:
+                note_id = note["id"]
+                active = st.session_state.get("active_note", {})
+                is_selected = active and active.get("id") == note_id
+                border = "rgba(139,92,246,0.5)" if is_selected else "rgba(255,255,255,0.07)"
+                bg = "rgba(139,92,246,0.08)" if is_selected else "rgba(255,255,255,0.02)"
+                updated = note.get("updated_at", "")
+                try:
+                    dt = datetime.fromisoformat(updated.replace("Z",""))
+                    date_str = dt.strftime("%b %d, %Y")
+                except:
+                    date_str = updated[:10] if updated else ""
+                preview = note.get("content", "")[:60] + ("..." if len(note.get("content","")) > 60 else "")
+
+                st.markdown(f"""
+                <div class="note-card" style="background:{bg};border:1px solid {border};cursor:pointer;">
+                    <div class="note-title">{note['title']}</div>
+                    <div class="note-date">{date_str}</div>
+                    <div style="font-size:0.78rem;color:#475569;margin-top:0.3rem;">{preview or "No content yet..."}</div>
+                </div>""", unsafe_allow_html=True)
+
+                sel_col, del_col = st.columns([3, 1])
+                with sel_col:
+                    if st.button("✏️ Open", key=f"open_note_{note_id}"):
+                        st.session_state["active_note"] = note
+                        st.session_state["note_mode"] = "edit"
+                        st.rerun()
+                with del_col:
+                    if st.button("🗑️", key=f"del_note_{note_id}"):
+                        api_delete(f"/api/notes/{note_id}")
+                        if st.session_state.get("active_note", {}).get("id") == note_id:
+                            st.session_state.pop("active_note", None)
+                        st.rerun()
+
+    with col_editor:
+        mode = st.session_state.get("note_mode", "new")
+        active_note = st.session_state.get("active_note")
+
+        if mode == "new" or (mode == "edit" and active_note):
+            header = f"EDITING: {active_note['title']}" if mode == "edit" else "NEW NOTE"
+            st.markdown(f'<div class="metric-label" style="margin-bottom:0.75rem;">{header}</div>', unsafe_allow_html=True)
+
+            default_title = active_note["title"] if mode == "edit" else ""
+            default_content = active_note["content"] if mode == "edit" else ""
+
+            title = st.text_input("Title", value=default_title, placeholder="Give your note a title...")
+            content = st.text_area(
+                "Content",
+                value=default_content,
+                height=350,
+                placeholder="Write your thoughts, reflections, goals, wins...\n\nUse markdown for formatting:\n**bold** _italic_ # heading"
+            )
+
+            s_col, c_col = st.columns(2)
+            with s_col:
+                if st.button("💾 Save Note", use_container_width=True):
+                    if not title.strip():
+                        st.error("Please add a title")
+                    else:
+                        if mode == "edit" and active_note:
+                            result = api_put(f"/api/notes/{active_note['id']}", {"title": title, "content": content})
+                            if result:
+                                st.success("✅ Note saved!")
+                                st.session_state["active_note"] = result
+                                st.rerun()
+                        else:
+                            result = api_post("/api/notes/", {"title": title, "content": content})
+                            if result:
+                                st.success("✅ Note created!")
+                                st.session_state["active_note"] = result
+                                st.session_state["note_mode"] = "edit"
+                                st.rerun()
+
+            with c_col:
+                if mode == "edit" and content:
+                    if st.button("👁 Preview", use_container_width=True):
+                        st.session_state["preview_note"] = not st.session_state.get("preview_note", False)
+                        st.rerun()
+
+            if st.session_state.get("preview_note") and content:
+                st.markdown("---")
+                st.markdown(f"### {title}")
+                st.markdown(content)
+        else:
+            st.markdown("""
+            <div style="background:rgba(139,92,246,0.06);border:1px dashed rgba(139,92,246,0.2);
+                border-radius:14px;padding:3rem;text-align:center;height:400px;
+                display:flex;flex-direction:column;align-items:center;justify-content:center;">
+                <div style="font-size:3rem;margin-bottom:1rem;">📝</div>
+                <div style="color:#94a3b8;font-size:1rem;font-weight:600;">Select a note to edit</div>
+                <div style="color:#475569;font-size:0.85rem;margin-top:0.4rem;">or create a new one</div>
+            </div>""", unsafe_allow_html=True)

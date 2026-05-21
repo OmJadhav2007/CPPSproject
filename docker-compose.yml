@@ -1,0 +1,147 @@
+import streamlit as st
+from datetime import date
+from frontend.components.api_client import api_get, api_post, api_put, api_delete
+from frontend.components.styles import CATEGORY_COLORS, CATEGORY_EMOJIS, PRIORITY_COLORS
+
+CATEGORIES = ["Study", "Fitness", "Productivity", "Health", "Reading", "Coding", "Custom"]
+PRIORITIES = ["High", "Medium", "Low"]
+FREQUENCIES = ["Daily", "Weekly", "Weekdays", "3x/week", "Custom"]
+
+def render():
+    st.markdown('<div class="page-title">Goal Management</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-subtitle">Define, track, and crush your goals.</div>', unsafe_allow_html=True)
+
+    # Filters
+    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns([2, 1, 1, 1])
+    with filter_col1:
+        search = st.text_input("🔍 Search goals", placeholder="Search by title...", label_visibility="collapsed")
+    with filter_col2:
+        cat_filter = st.selectbox("Category", ["All"] + CATEGORIES, label_visibility="collapsed")
+    with filter_col3:
+        pri_filter = st.selectbox("Priority", ["All"] + PRIORITIES, label_visibility="collapsed")
+    with filter_col4:
+        show_inactive = st.checkbox("Show archived", value=False)
+
+    params = {}
+    if search:
+        params["search"] = search
+    if cat_filter != "All":
+        params["category"] = cat_filter
+    if pri_filter != "All":
+        params["priority"] = pri_filter
+    if not show_inactive:
+        params["is_active"] = "true"
+
+    goals = api_get("/api/goals/", params=params) or []
+
+    col_list, col_form = st.columns([3, 2])
+
+    with col_list:
+        st.markdown(f'<div class="metric-label" style="margin-bottom:0.75rem;">GOALS ({len(goals)})</div>', unsafe_allow_html=True)
+
+        if not goals:
+            st.markdown("""
+            <div style="background:rgba(139,92,246,0.06);border:1px dashed rgba(139,92,246,0.25);
+                border-radius:14px;padding:2rem;text-align:center;">
+                <div style="font-size:2.5rem;margin-bottom:0.5rem;">🎯</div>
+                <div style="color:#94a3b8;">No goals yet. Create your first goal!</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            for goal in goals:
+                cat = goal.get("category", "Custom")
+                emoji = CATEGORY_EMOJIS.get(cat, "🎯")
+                p_color = PRIORITY_COLORS.get(goal.get("priority", "Medium"), "#94a3b8")
+                c_color = CATEGORY_COLORS.get(cat, "#94a3b8")
+                active = goal.get("is_active", True)
+                opacity = "1" if active else "0.5"
+
+                with st.container():
+                    st.markdown(f"""
+                    <div class="goal-card" style="opacity:{opacity};">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                            <div style="flex:1;">
+                                <span style="font-size:1.1rem;">{emoji}</span>
+                                <span class="goal-title" style="margin-left:0.4rem;">{goal['title']}</span>
+                                {'<span style="font-size:0.7rem;background:rgba(244,63,94,0.15);color:#f43f5e;padding:0.1rem 0.4rem;border-radius:4px;margin-left:0.5rem;">archived</span>' if not active else ''}
+                            </div>
+                            <span style="font-size:0.72rem;font-weight:700;color:{p_color};">{goal.get('priority','Medium')}</span>
+                        </div>
+                        <div class="goal-meta" style="margin-top:0.4rem;">
+                            <span style="color:{c_color};font-weight:600;">{cat}</span> &nbsp;·&nbsp;
+                            {goal.get('target_frequency','Daily')} &nbsp;·&nbsp;
+                            <span style="color:#475569;">Since {goal.get('start_date','–')}</span>
+                        </div>
+                        {f'<div style="font-size:0.78rem;color:#64748b;margin-top:0.35rem;font-style:italic;">{goal["notes"][:80]}{"..." if len(goal.get("notes",""))>80 else ""}</div>' if goal.get("notes") else ""}
+                    </div>""", unsafe_allow_html=True)
+
+                    a1, a2, a3 = st.columns([1, 1, 2])
+                    with a1:
+                        if st.button("✏️ Edit", key=f"edit_{goal['id']}"):
+                            st.session_state["edit_goal"] = goal
+                            st.rerun()
+                    with a2:
+                        archive_label = "↩️ Restore" if not active else "📦 Archive"
+                        if st.button(archive_label, key=f"arch_{goal['id']}"):
+                            api_put(f"/api/goals/{goal['id']}", {"is_active": not active})
+                            st.rerun()
+                    with a3:
+                        if st.button("🗑️ Delete", key=f"del_{goal['id']}"):
+                            api_delete(f"/api/goals/{goal['id']}")
+                            st.rerun()
+
+    with col_form:
+        editing = st.session_state.get("edit_goal")
+        if editing:
+            st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">EDIT GOAL</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">NEW GOAL</div>', unsafe_allow_html=True)
+
+        default = editing or {}
+        with st.form("goal_form", clear_on_submit=True):
+            title = st.text_input("Goal Title *", value=default.get("title", ""), placeholder="e.g. Read 30 minutes daily")
+            cat_idx = CATEGORIES.index(default.get("category", "Custom")) if default.get("category") in CATEGORIES else 0
+            category = st.selectbox("Category", CATEGORIES, index=cat_idx)
+            pri_idx = PRIORITIES.index(default.get("priority", "Medium")) if default.get("priority") in PRIORITIES else 1
+            priority = st.selectbox("Priority", PRIORITIES, index=pri_idx)
+            freq_idx = FREQUENCIES.index(default.get("target_frequency", "Daily")) if default.get("target_frequency") in FREQUENCIES else 0
+            frequency = st.selectbox("Target Frequency", FREQUENCIES, index=freq_idx)
+            start_date = st.date_input("Start Date", value=date.today())
+            notes = st.text_area("Notes (optional)", value=default.get("notes", ""), height=80, placeholder="What's your motivation?")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                submitted = st.form_submit_button("💾 Save Goal", use_container_width=True)
+            with c2:
+                if editing:
+                    cancelled = st.form_submit_button("✕ Cancel", use_container_width=True)
+                    if cancelled:
+                        st.session_state.pop("edit_goal", None)
+                        st.rerun()
+
+            if submitted:
+                if not title.strip():
+                    st.error("Title is required!")
+                else:
+                    payload = {
+                        "title": title.strip(),
+                        "category": category,
+                        "priority": priority,
+                        "target_frequency": frequency,
+                        "notes": notes,
+                        "start_date": str(start_date),
+                    }
+                    if editing:
+                        result = api_put(f"/api/goals/{editing['id']}", payload)
+                        if result:
+                            st.success("✅ Goal updated!")
+                            st.session_state.pop("edit_goal", None)
+                            st.rerun()
+                        else:
+                            st.error("Failed to update goal")
+                    else:
+                        result = api_post("/api/goals/", payload)
+                        if result:
+                            st.success("✅ Goal created!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to create goal")

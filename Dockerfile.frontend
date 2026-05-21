@@ -1,0 +1,74 @@
+import streamlit as st
+from frontend.components.api_client import api_get, export_csv
+
+def render():
+    st.markdown('<div class="page-title">Settings</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-subtitle">Manage your account and data.</div>', unsafe_allow_html=True)
+
+    user = st.session_state.get("user", {})
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">ACCOUNT INFO</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);
+            border-radius:14px;padding:1.5rem;">
+            <div style="font-family:'Syne',sans-serif;font-size:1.25rem;font-weight:700;margin-bottom:0.75rem;">
+                👤 {user.get('username', 'User')}
+            </div>
+            <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.4rem;">
+                📧 {user.get('email', '')}
+            </div>
+            <div style="font-size:0.75rem;color:#475569;">
+                Member since: {str(user.get('created_at', ''))[:10]}
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">DATA EXPORT</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:1.25rem;">
+            <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.75rem;">
+                Download all your data including goals, progress, and notes as CSV.
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        if st.button("⬇️ Export All Data as CSV", use_container_width=True):
+            csv_data = export_csv()
+            if csv_data:
+                st.download_button(
+                    "📥 Download goal_sync_export.csv",
+                    data=csv_data,
+                    file_name="goal_sync_export.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.error("Export failed. Please try again.")
+
+    with col2:
+        st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">APP STATS</div>', unsafe_allow_html=True)
+        stats = api_get("/api/progress/dashboard-stats") or {}
+
+        stat_items = [
+            ("🎯 Total Goals", stats.get("total_goals", 0)),
+            ("✅ Active Goals", stats.get("active_goals", 0)),
+            ("📊 Total Completions", stats.get("total_completions", 0)),
+            ("🔥 Combined Streak", stats.get("total_streak", 0)),
+            ("📈 Weekly Rate", f"{stats.get('weekly_completion_pct', 0)}%"),
+        ]
+        for label, val in stat_items:
+            st.markdown(f"""
+            <div style="display:flex;justify-content:space-between;align-items:center;
+                padding:0.75rem 1rem;border-bottom:1px solid rgba(255,255,255,0.05);">
+                <span style="font-size:0.85rem;color:#94a3b8;">{label}</span>
+                <span style="font-family:'Syne',sans-serif;font-weight:700;color:#f1f5f9;">{val}</span>
+            </div>""", unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown('<div class="metric-label" style="margin-bottom:0.75rem;">DANGER ZONE</div>', unsafe_allow_html=True)
+        if st.button("🚪 Sign Out", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
